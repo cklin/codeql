@@ -7,6 +7,7 @@ private import codeql.ruby.ast.internal.Constant
 private import ControlFlowGraph
 private import internal.ControlFlowGraphImpl
 private import internal.Splitting
+private import codeql.ruby.security.performance.RegExpTreeView as RETV
 
 /** An entry node for a given scope. */
 class EntryNode extends CfgNode, TEntryNode {
@@ -863,7 +864,8 @@ module ExprNodes {
     override predicate requiredString(string s) {
       exists(StringlikeLiteralCfgNode n |
         s = getStringlikeLiteralCfgNodeValue(n) and
-        not n.getExpr() instanceof SymbolLiteral
+        not n.getExpr() instanceof SymbolLiteral and
+        not n.getExpr() instanceof RegExpLiteral
       )
     }
 
@@ -871,6 +873,13 @@ module ExprNodes {
       exists(StringlikeLiteralCfgNode n |
         s = getStringlikeLiteralCfgNodeValue(n) and
         n.getExpr() instanceof SymbolLiteral
+      )
+    }
+
+    override predicate requiredRegExp(string s, string flags) {
+      exists(StringlikeLiteralCfgNode n |
+        s = getStringlikeLiteralCfgNodeValue(n) and
+        flags = n.getExpr().(RegExpLiteral).getFlagString()
       )
     }
   }
@@ -888,9 +897,15 @@ module ExprNodes {
     StringComponentCfgNode getAComponent() { result = this.getComponent(_) }
 
     final override ConstantValue getConstantValue() {
-      if this.getExpr() instanceof SymbolLiteral
-      then result.isSymbol(getStringlikeLiteralCfgNodeValue(this))
-      else result.isString(getStringlikeLiteralCfgNodeValue(this))
+      exists(StringlikeLiteral l | l = this.getExpr() |
+        l instanceof SymbolLiteral and result.isSymbol(getStringlikeLiteralCfgNodeValue(this))
+        or
+        l instanceof RegExpLiteral and result.isRegExp(getStringlikeLiteralCfgNodeValue(this))
+        or
+        not l instanceof SymbolLiteral and
+        not l instanceof RegExpLiteral and
+        result.isString(getStringlikeLiteralCfgNodeValue(this))
+      )
     }
   }
 
@@ -911,17 +926,20 @@ module ExprNodes {
   }
 
   language[monotonicAggregates]
-  private string getRegExpLiteralCfgNodeValue(RegExpLiteralCfgNode n) {
+  private string getRegExpLiteralCfgNodeValue(RegExpLiteralCfgNode n, string flags) {
     result =
       concat(RegExpComponentCfgNode c, int i |
         c = n.getComponent(i)
       |
         getRegExpComponentCfgNodeValue(c) order by i
-      )
+      ) and
+    flags = n.getExpr().getFlagString()
   }
 
-  private class RequiredRexExpLiteralConstantValue extends RequiredConstantValue {
-    override predicate requiredString(string s) { s = getRegExpLiteralCfgNodeValue(_) }
+  private class RequiredRegExpLiteralConstantValue extends RequiredConstantValue {
+    override predicate requiredRegExp(string s, string flags) {
+      s = getRegExpLiteralCfgNodeValue(_, flags)
+    }
   }
 
   /** A control-flow node that wraps a `RegExpLiteral` AST expression. */
@@ -932,8 +950,10 @@ module ExprNodes {
 
     final override RegExpLiteral getExpr() { result = super.getExpr() }
 
-    final override ConstantValue::ConstantStringValue getConstantValue() {
-      result.isString(getRegExpLiteralCfgNodeValue(this))
+    final override ConstantValue::ConstantRegExpValue getConstantValue() {
+      exists(string s, string flags | s = getRegExpLiteralCfgNodeValue(this, flags) |
+        result.isRegExpWithFlags(s, flags)
+      )
     }
   }
 

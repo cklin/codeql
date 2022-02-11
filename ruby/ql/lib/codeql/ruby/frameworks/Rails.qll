@@ -177,7 +177,7 @@ private module Settings {
       value instanceof ConstantValue::ConstantNilValue
     }
 
-    string getStringValue() { result = value.getStringOrSymbol() }
+    string getStringValue() { result = value.getStringlikeValue() }
 
     predicate isNilValue() { value.isNil() }
   }
